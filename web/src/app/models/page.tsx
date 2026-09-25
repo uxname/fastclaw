@@ -65,14 +65,6 @@ const PROVIDER_PRESETS: Record<
   anthropic: { apiBase: "https://api.anthropic.com", apiType: "anthropic-messages", authType: "api-key", models: ["claude-opus-4-7", "claude-sonnet-4-7", "claude-haiku-4-5"] },
   deepseek: { apiBase: "https://api.deepseek.com", apiType: "openai-chat", authType: "bearer-token", models: ["deepseek-v4-pro", "deepseek-v4-flash"] },
   ollama: { apiBase: "http://localhost:11434/v1", apiType: "openai-chat", authType: "bearer-token", models: [] },
-  // OpenCode Go rejects requests without a per-conversation session header.
-  "opencode-go": {
-    apiBase: "https://opencode.ai/zen/go/v1",
-    apiType: "openai-chat",
-    authType: "bearer-token",
-    models: ["glm-5.3", "kimi-k3", "deepseek-v4-pro"],
-    headers: { "x-opencode-session": "{{session}}" },
-  },
   custom: { apiBase: "", apiType: "openai-chat", authType: "bearer-token", models: [] },
 };
 
@@ -82,7 +74,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   deepseek: "DeepSeek",
   ollama: "Ollama",
-  "opencode-go": "OpenCode Go",
   custom: "Custom",
 };
 
