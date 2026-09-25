@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -46,6 +47,7 @@ import {
 } from "@/lib/api";
 import { useAgentIdFromURL } from "@/hooks/use-agent-id";
 import { useLocale } from "@/components/locale-provider";
+import { headersToText, parseHeadersText } from "@/lib/provider-headers";
 import { useAgentName } from "@/hooks/use-agent-name";
 
 // Per-agent Models page — same UI/UX as the admin /models page, but
@@ -63,13 +65,21 @@ import { useAgentName } from "@/hooks/use-agent-name";
 // vary too much to ship a baked-in suggestion).
 const PROVIDER_PRESETS: Record<
   string,
-  { apiBase: string; apiType: string; authType: string; models: string[] }
+  { apiBase: string; apiType: string; authType: string; models: string[]; headers?: Record<string, string> }
 > = {
   openai: { apiBase: "https://api.openai.com/v1", apiType: "openai-chat", authType: "bearer-token", models: ["gpt-5.5"] },
   openrouter: { apiBase: "https://openrouter.ai/api/v1", apiType: "openai-chat", authType: "bearer-token", models: [] },
   anthropic: { apiBase: "https://api.anthropic.com", apiType: "anthropic-messages", authType: "api-key", models: ["claude-opus-4-7", "claude-sonnet-4-7", "claude-haiku-4-5"] },
   deepseek: { apiBase: "https://api.deepseek.com", apiType: "openai-chat", authType: "bearer-token", models: ["deepseek-v4-pro", "deepseek-v4-flash"] },
   ollama: { apiBase: "http://localhost:11434/v1", apiType: "openai-chat", authType: "bearer-token", models: [] },
+  // OpenCode Go rejects requests without a per-conversation session header.
+  "opencode-go": {
+    apiBase: "https://opencode.ai/zen/go/v1",
+    apiType: "openai-chat",
+    authType: "bearer-token",
+    models: ["glm-5.3", "kimi-k3", "deepseek-v4-pro"],
+    headers: { "x-opencode-session": "{{session}}" },
+  },
   custom: { apiBase: "", apiType: "openai-chat", authType: "bearer-token", models: [] },
 };
 
@@ -79,6 +89,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   deepseek: "DeepSeek",
   ollama: "Ollama",
+  "opencode-go": "OpenCode Go",
   custom: "Custom",
 };
 
@@ -101,6 +112,7 @@ interface ProviderEntry {
   apiType: string;
   authType: string;
   models: ModelEntry[];
+  headers: Record<string, string>; // values masked by the server
   // Inheritance source. Only "agent" rows are editable on this page;
   // "user" and "system" rows are read-only views of the chain that
   // resolves at runtime. Two same-name rows in different scopes can
@@ -160,6 +172,7 @@ export default function AgentModelsPage() {
   const [formApiType, setFormApi] = useState("openai-chat");
   const [formAuthType, setFormAuthType] = useState("api-key");
   const [formModels, setFormModels] = useState<ModelEntry[]>([]);
+  const [formHeaders, setFormHeaders] = useState("");
   type ModelTestResult = { status: "idle" | "testing" | "success" | "error"; error?: string };
   const [modelTests, setModelTests] = useState<Record<number, ModelTestResult>>({});
   const [batchTesting, setBatchTesting] = useState(false);
@@ -230,6 +243,7 @@ export default function AgentModelsPage() {
         apiType: r.apiType || "openai-chat",
         authType: r.authType || "bearer-token",
         models: r.models || [],
+        headers: r.headers || {},
         scope: sc,
       });
       const merged: ProviderEntry[] = [
@@ -273,6 +287,7 @@ export default function AgentModelsPage() {
     setFormApiBase(PROVIDER_PRESETS["openai"].apiBase);
     setFormApi(PROVIDER_PRESETS["openai"].apiType);
     setFormAuthType(PROVIDER_PRESETS["openai"].authType);
+    setFormHeaders(headersToText(PROVIDER_PRESETS["openai"].headers));
     setFormApiKey("");
     setFormModels(presetModelRows("openai"));
     setModelTests({});
@@ -288,6 +303,7 @@ export default function AgentModelsPage() {
     setFormApiBase(provider.apiBase);
     setFormApi(provider.apiType);
     setFormAuthType(provider.authType || "bearer-token");
+    setFormHeaders(headersToText(provider.headers));
     setFormApiKey("");
     setFormModels(
       (provider.models || []).map((m) => {
@@ -322,6 +338,7 @@ export default function AgentModelsPage() {
       setFormApiBase(cfg.apiBase);
       setFormApi(cfg.apiType);
       setFormAuthType(cfg.authType);
+      setFormHeaders(headersToText(cfg.headers));
     }
     setFormName(preset === "custom" ? "" : preset);
     setFormModels(presetModelRows(preset));
@@ -351,6 +368,7 @@ export default function AgentModelsPage() {
                 apiBase: formApiBase,
                 apiType: formApiType,
                 authType: formAuthType,
+                headers: parseHeadersText(formHeaders),
               })
             : await testProvider({
                 apiBase: formApiBase,
@@ -358,6 +376,7 @@ export default function AgentModelsPage() {
                 model: id,
                 apiType: formApiType,
                 authType: formAuthType,
+                headers: parseHeadersText(formHeaders),
               });
           setModelTests((prev) => ({
             ...prev,
@@ -433,6 +452,7 @@ export default function AgentModelsPage() {
           apiType: formApiType,
           authType: formAuthType,
           models: cleanedModels,
+          headers: parseHeadersText(formHeaders),
         });
       } else {
         await createProvider({
@@ -444,6 +464,7 @@ export default function AgentModelsPage() {
           apiType: formApiType,
           authType: formAuthType,
           models: cleanedModels,
+          headers: parseHeadersText(formHeaders),
         });
       }
       flashSaved();
@@ -882,6 +903,24 @@ export default function AgentModelsPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="provider-headers">{tr("Custom headers", "自定义请求头")}</Label>
+              <Textarea
+                id="provider-headers"
+                value={formHeaders}
+                onChange={(e) => setFormHeaders(e.target.value)}
+                placeholder="x-opencode-session: {{session}}"
+                rows={2}
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                {tr(
+                  "Optional. One \"Name: value\" per line, sent with every request. {{session}} becomes a stable per-conversation ID.",
+                  "可选。每行一个“名称: 值”，随每个请求发送。{{session}} 会替换为每个会话固定的 ID。",
+                )}
+              </p>
             </div>
 
             <div className="space-y-3 pt-2 border-t border-border">
